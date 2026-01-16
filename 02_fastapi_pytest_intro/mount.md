@@ -564,3 +564,71 @@ GET /tasks/open/high  ← Confusing! "open" aur "high" kya hai?
 | **Multiple values** | Hard to manage | Easy (`&`) |
 
 ---
+
+
+<br> </br>
+
+## **8. Pytest understading :**
+**Short answer:**
+👉 **pytest sirf tests RUN karta hai, test khud se WRITE nahi karta.**
+
+Ab **asaan alfaaz mein, beginner level pe** samjho 👇
+
+---
+
+### pytest hota kia hai?
+
+`pytest` **Python ka testing tool** hai.
+
+Socho:
+
+* Tum **test likhte ho** ✍️
+* `pytest` un tests ko **chala ke check karta hai** ▶️
+* Aur batata hai **pass** hua ya **fail** ❌✅
+
+---
+
+### pytest kia kaam karta hai?
+
+✅ Tumhare likhe hue tests **run karta hai**
+✅ Errors dikhata hai
+✅ Batata hai kaunsa test fail hua aur kyun
+
+❌ **pytest test khud se nahi likhta**
+❌ Logic ya test cases khud nahi banata
+
+---
+
+### Test kaun likhta hai?
+
+👉 **Developer (tum)**
+
+Example:
+
+```python
+def add(a, b):
+    return a + b
+```
+
+Tum test likhte ho:
+
+```python
+def test_add():
+    assert add(2, 3) == 5
+```
+
+Phir terminal mein:
+
+```bash
+pytest
+```
+
+👉 Ab `pytest` bolega:
+
+* PASS 👍 ya
+* FAIL 👎
+
+---
+
+
+---------------------

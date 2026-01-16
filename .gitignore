@@ -18,3 +18,7 @@ htmlcov
 
 
 uv.lock
+
+
+pytest.ini
+
