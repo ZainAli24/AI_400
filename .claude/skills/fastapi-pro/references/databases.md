@@ -2,6 +2,7 @@
 
 ## Table of Contents
 - SQLAlchemy (PostgreSQL, MySQL, SQLite)
+- SQLModel (Recommended for FastAPI)
 - MongoDB with Motor
 - Prisma
 - Database Best Practices
@@ -106,6 +107,249 @@ alembic revision --autogenerate -m "Create users table"
 # Run migration
 alembic upgrade head
 ```
+
+## SQLModel (Recommended for FastAPI)
+
+SQLModel is created by the same author as FastAPI (tiangolo). It combines SQLAlchemy and Pydantic, making it the most FastAPI-friendly ORM choice.
+
+### Why SQLModel?
+
+| Feature | SQLAlchemy | SQLModel |
+|---------|------------|----------|
+| Model + Validation | 2 separate classes | Single class |
+| Type hints | `Column(Integer)` | Native Python `int` |
+| Syntax | Verbose | Clean & simple |
+| FastAPI integration | Manual | Native |
+| Boilerplate | More | Less |
+
+### Installation
+
+```bash
+pip install sqlmodel
+```
+
+### Setup
+
+```python
+# app/db/database.py
+from sqlmodel import SQLModel, create_engine, Session
+from app.core.config import settings
+
+engine = create_engine(
+    settings.DATABASE_URL,
+    echo=True  # Set False in production
+)
+
+def create_db_and_tables():
+    SQLModel.metadata.create_all(engine)
+
+def get_session():
+    with Session(engine) as session:
+        yield session
+```
+
+### Models (Single class for DB + Validation)
+
+```python
+# app/models/user.py
+from sqlmodel import SQLModel, Field
+from datetime import datetime
+
+class UserBase(SQLModel):
+    email: str = Field(unique=True, index=True)
+    username: str = Field(unique=True, index=True)
+    is_active: bool = True
+
+class User(UserBase, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    hashed_password: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+class UserCreate(UserBase):
+    password: str
+
+class UserUpdate(SQLModel):
+    email: str | None = None
+    username: str | None = None
+    is_active: bool | None = None
+    password: str | None = None
+
+class UserPublic(UserBase):
+    id: int
+```
+
+### CRUD Operations
+
+```python
+# app/api/users.py
+from fastapi import APIRouter, Depends, HTTPException
+from sqlmodel import Session, select
+from app.db.database import get_session
+from app.models.user import User, UserCreate, UserUpdate, UserPublic
+
+router = APIRouter()
+
+@router.get("/users", response_model=list[UserPublic])
+def get_users(
+    skip: int = 0,
+    limit: int = 10,
+    session: Session = Depends(get_session)
+):
+    users = session.exec(select(User).offset(skip).limit(limit)).all()
+    return users
+
+@router.get("/users/{user_id}", response_model=UserPublic)
+def get_user(user_id: int, session: Session = Depends(get_session)):
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+
+@router.post("/users", response_model=UserPublic, status_code=201)
+def create_user(user: UserCreate, session: Session = Depends(get_session)):
+    # Check if exists
+    existing = session.exec(
+        select(User).where(User.email == user.email)
+    ).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
+
+    db_user = User(
+        email=user.email,
+        username=user.username,
+        hashed_password=f"hashed_{user.password}"  # Use proper hashing
+    )
+    session.add(db_user)
+    session.commit()
+    session.refresh(db_user)
+    return db_user
+
+@router.put("/users/{user_id}", response_model=UserPublic)
+def update_user(
+    user_id: int,
+    user: UserUpdate,
+    session: Session = Depends(get_session)
+):
+    db_user = session.get(User, user_id)
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user_data = user.model_dump(exclude_unset=True)
+    if "password" in user_data:
+        user_data["hashed_password"] = f"hashed_{user_data.pop('password')}"
+
+    for key, value in user_data.items():
+        setattr(db_user, key, value)
+
+    session.add(db_user)
+    session.commit()
+    session.refresh(db_user)
+    return db_user
+
+@router.delete("/users/{user_id}", status_code=204)
+def delete_user(user_id: int, session: Session = Depends(get_session)):
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    session.delete(user)
+    session.commit()
+```
+
+### Relationships
+
+```python
+from sqlmodel import SQLModel, Field, Relationship
+
+class Team(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    name: str
+    members: list["User"] = Relationship(back_populates="team")
+
+class User(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    name: str
+    team_id: int | None = Field(default=None, foreign_key="team.id")
+    team: Team | None = Relationship(back_populates="members")
+```
+
+### Quick Single-File Example
+
+```python
+# main.py - Complete working example
+from fastapi import FastAPI, Depends, HTTPException
+from sqlmodel import SQLModel, Field, create_engine, Session, select
+from contextlib import asynccontextmanager
+
+# Model
+class Task(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    title: str
+    description: str | None = None
+    completed: bool = False
+
+# Database
+engine = create_engine("sqlite:///./tasks.db", echo=True)
+
+def get_session():
+    with Session(engine) as session:
+        yield session
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    SQLModel.metadata.create_all(engine)
+    yield
+
+app = FastAPI(lifespan=lifespan)
+
+# CRUD Endpoints
+@app.post("/tasks", response_model=Task)
+def create_task(task: Task, session: Session = Depends(get_session)):
+    session.add(task)
+    session.commit()
+    session.refresh(task)
+    return task
+
+@app.get("/tasks", response_model=list[Task])
+def get_tasks(session: Session = Depends(get_session)):
+    return session.exec(select(Task)).all()
+
+@app.get("/tasks/{task_id}", response_model=Task)
+def get_task(task_id: int, session: Session = Depends(get_session)):
+    task = session.get(Task, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return task
+
+@app.patch("/tasks/{task_id}", response_model=Task)
+def update_task(task_id: int, completed: bool, session: Session = Depends(get_session)):
+    task = session.get(Task, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    task.completed = completed
+    session.add(task)
+    session.commit()
+    session.refresh(task)
+    return task
+
+@app.delete("/tasks/{task_id}", status_code=204)
+def delete_task(task_id: int, session: Session = Depends(get_session)):
+    task = session.get(Task, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    session.delete(task)
+    session.commit()
+```
+
+### SQLModel vs SQLAlchemy - When to Use
+
+| Use Case | Recommendation |
+|----------|----------------|
+| New FastAPI project | SQLModel |
+| Existing SQLAlchemy codebase | Keep SQLAlchemy |
+| Complex queries/joins | SQLAlchemy (more mature) |
+| Simple CRUD apps | SQLModel |
+| Learning FastAPI | SQLModel |
+| Need latest SQLAlchemy features | SQLAlchemy |
 
 ## MongoDB with Motor
 

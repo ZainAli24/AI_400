@@ -7,6 +7,33 @@ description: Comprehensive pytest testing framework for FastAPI projects. Use wh
 
 Professional testing framework for FastAPI applications with pytest. This skill provides patterns, best practices, and complete examples for comprehensive API testing.
 
+## Before You Start
+
+### Required Clarifications (Must Ask)
+Before writing tests, gather these requirements:
+
+| Question | Options | Impact |
+|----------|---------|--------|
+| Sync or Async endpoints? | Sync / Async / Both | Determines TestClient vs AsyncClient |
+| Database testing needed? | SQLAlchemy / SQLModel / MongoDB / None | Affects fixture setup |
+| Authentication testing? | JWT / OAuth2 / Session / None | Auth fixture patterns |
+| Existing test setup? | Yes / No | Build on existing or create new |
+
+### Optional Clarifications
+| Question | Default |
+|----------|---------|
+| Coverage threshold? | 80% |
+| CI/CD integration? | GitHub Actions |
+| Watch mode needed? | No |
+
+### Context Gathering Commands
+```bash
+# Check existing test structure
+ls -la tests/ 2>/dev/null || echo "No tests folder"
+cat conftest.py 2>/dev/null || echo "No conftest.py"
+cat pytest.ini 2>/dev/null || cat pyproject.toml 2>/dev/null | grep -A 10 "\[tool.pytest"
+```
+
 ## Quick Start
 
 ### Basic Test Structure
@@ -274,14 +301,132 @@ markers =
     unit: unit tests
 ```
 
-## Workflow
+## TDD Workflow: Red-Green-Refactor
 
-1. **Write test first** - Define expected behavior
-2. **Use fixtures** - Set up test dependencies
-3. **Test success path** - Verify normal operation
-4. **Test error paths** - Verify error handling
-5. **Run tests** - `pytest -v`
-6. **Check coverage** - `pytest --cov=app`
-7. **Refactor** - Improve code while tests pass
+TDD ka core principle: **Test First, Code Second**
+
+### The TDD Cycle
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  1. RED         2. GREEN         3. REFACTOR           │
+│  ─────────      ────────         ──────────            │
+│  Write test     Write minimum    Improve code          │
+│  that FAILS     code to PASS     (tests stay GREEN)    │
+│                                                        │
+│  ┌───┐          ┌───┐            ┌───┐                 │
+│  │ ✗ │ ──────►  │ ✓ │ ────────►  │ ✓ │ ──► Repeat     │
+│  └───┘          └───┘            └───┘                 │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Step 1: RED - Write Failing Test First
+
+```python
+# test_users.py - Test likho PEHLE, implementation BAAD mein
+def test_create_user_returns_201():
+    """User create karne par 201 status milna chahiye"""
+    response = client.post("/users/", json={"email": "test@example.com"})
+    assert response.status_code == 201  # ❌ FAIL - endpoint exists nahi
+    assert response.json()["email"] == "test@example.com"
+```
+
+**Run Test (Expected: FAIL)**
+```bash
+pytest test_users.py -v
+# ❌ FAILED - This is EXPECTED!
+```
+
+### Step 2: GREEN - Write Minimum Code to Pass
+
+```python
+# main.py - Sirf ITNA likho jitna test pass karne ke liye chahiye
+from pydantic import BaseModel
+
+class UserCreate(BaseModel):
+    email: str
+
+@app.post("/users/", status_code=201)
+def create_user(user: UserCreate):
+    return {"email": user.email}  # Minimum implementation
+```
+
+**Run Test (Expected: PASS)**
+```bash
+pytest test_users.py -v
+# ✅ PASSED
+```
+
+### Step 3: REFACTOR - Improve While Tests Pass
+
+```python
+# Refactor: Add validation, improve structure
+from pydantic import BaseModel, EmailStr
+
+class UserCreate(BaseModel):
+    email: EmailStr  # Better validation
+
+class UserResponse(BaseModel):
+    email: EmailStr
+    id: int
+
+@app.post("/users/", status_code=201, response_model=UserResponse)
+def create_user(user: UserCreate):
+    # Better implementation with ID
+    return {"email": user.email, "id": 1}
+```
+
+**Update Test for New Response**
+```python
+def test_create_user_returns_201():
+    response = client.post("/users/", json={"email": "test@example.com"})
+    assert response.status_code == 201
+    assert response.json()["email"] == "test@example.com"
+    assert "id" in response.json()  # New assertion
+```
+
+```bash
+pytest test_users.py -v
+# ✅ PASSED - Refactor successful
+```
+
+### TDD Best Practices
+
+| Practice | Description |
+|----------|-------------|
+| Small Steps | Ek test, ek feature - bade jumps mat lo |
+| Fast Tests | Tests < 1 second mein run hone chahiye |
+| Independent | Har test independently pass hona chahiye |
+| Clear Names | `test_create_user_with_invalid_email_returns_422` |
+| One Assert Focus | Primary assertion clear hona chahiye |
+
+### TDD Workflow Commands
+
+```bash
+# Watch mode - auto run on file change
+pytest --watch  # (requires pytest-watch)
+pip install pytest-watch
+ptw  # Short command
+
+# Run specific test during development
+pytest test_users.py::test_create_user_returns_201 -v
+
+# Run with print output (debugging)
+pytest -v -s
+```
 
 For complete examples, advanced patterns, and detailed reference material, consult the documentation in the `references/` directory.
+
+- **[references/tdd-workflow.md](references/tdd-workflow.md)** - Complete TDD patterns, error-first testing, incremental development
+- **[references/security-testing.md](references/security-testing.md)** - SQL injection, XSS, authentication bypass, OWASP Top 10 testing
+
+## Official Documentation
+
+| Resource | URL | Use For |
+|----------|-----|---------|
+| **Pytest Official** | https://docs.pytest.org/en/stable/ | Fixtures, markers, plugins |
+| **FastAPI Testing** | https://fastapi.tiangolo.com/tutorial/testing/ | TestClient, dependency overrides |
+| **pytest-asyncio** | https://pytest-asyncio.readthedocs.io/ | Async endpoint testing |
+| **pytest-cov** | https://pytest-cov.readthedocs.io/ | Coverage configuration |
+| **Hypothesis** | https://hypothesis.readthedocs.io/ | Property-based testing |
+| **pytest-watch** | https://github.com/joeyespo/pytest-watch | TDD watch mode |

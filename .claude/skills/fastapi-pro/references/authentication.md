@@ -1,11 +1,65 @@
 # Authentication & Authorization Guide
 
 ## Table of Contents
+- Password Hashing with Argon2
 - JWT Token Authentication
 - OAuth2 with Password Flow
 - API Key Authentication
 - Role-Based Access Control (RBAC)
 - Security Best Practices
+
+---
+
+## Password Hashing with Argon2 (Recommended)
+
+### Why Argon2?
+- **2015 Password Hashing Competition Winner** - Most secure algorithm
+- **Memory-hard** - Resistant to GPU/ASIC attacks
+- **Automatic salting** - Each hash is unique
+- **Better than bcrypt** - Modern and more secure
+
+### Installation
+```bash
+pip install pwdlib[argon2]
+```
+
+### Setup with pwdlib
+
+```python
+# app/core/security.py
+from pwdlib import PasswordHash  # type: ignore
+from pwdlib.hashers.argon2 import Argon2Hasher  # type: ignore
+
+# Argon2 hasher setup
+pwd_context = PasswordHash((Argon2Hasher(),))
+
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verify a plain password against a hashed password."""
+    return pwd_context.verify(plain_password, hashed_password)
+
+
+def get_password_hash(password: str) -> str:
+    """Hash a password using Argon2."""
+    return pwd_context.hash(password)
+```
+
+### Hash Structure
+```
+$argon2id$v=19$m=65536,t=3,p=4$SALT$HASH
+├────────┤├───┤├──────────────┤├────┤├────┤
+Algorithm Version  Parameters    Salt   Hash
+```
+
+| Component | Meaning |
+|-----------|---------|
+| `argon2id` | Algorithm (best variant) |
+| `v=19` | Argon2 version |
+| `m=65536` | Memory: 64 MB |
+| `t=3` | Time: 3 iterations |
+| `p=4` | Parallelism: 4 threads |
+
+---
 
 ## JWT Token Authentication
 
@@ -16,27 +70,37 @@
 from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
-from passlib.context import CryptContext
+from pwdlib import PasswordHash  # type: ignore
+from pwdlib.hashers.argon2 import Argon2Hasher  # type: ignore
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Argon2 - Most secure password hashing
+pwd_context = PasswordHash((Argon2Hasher(),))
 
 SECRET_KEY = "your-secret-key-keep-it-secret"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verify password using Argon2."""
     return pwd_context.verify(plain_password, hashed_password)
 
+
 def get_password_hash(password: str) -> str:
+    """Hash password using Argon2."""
     return pwd_context.hash(password)
 
+
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+    """Create a signed JWT token."""
     to_encode = data.copy()
     expire = datetime.utcnow() + (expires_delta or timedelta(minutes=15))
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
+
 def decode_access_token(token: str):
+    """Decode and validate a JWT token."""
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return payload
@@ -248,7 +312,7 @@ def refresh_token(refresh_token: str):
 
 1. **Store Secrets Securely**: Use environment variables, never hardcode
 2. **Use HTTPS**: Always use HTTPS in production
-3. **Password Hashing**: Use bcrypt or similar strong hashing
+3. **Password Hashing**: Use Argon2 with pwdlib (recommended) - 2015 Password Hashing Competition winner
 4. **Token Expiration**: Set reasonable expiration times
 5. **Refresh Tokens**: Implement refresh tokens for long sessions
 6. **Rate Limiting**: Implement rate limiting on auth endpoints
@@ -256,6 +320,15 @@ def refresh_token(refresh_token: str):
 8. **Input Validation**: Validate all user inputs
 9. **SQL Injection**: Use ORM parameterized queries
 10. **XSS Protection**: Sanitize outputs
+
+### Password Hashing Comparison
+
+| Algorithm | Security | Speed | Recommendation |
+|-----------|----------|-------|----------------|
+| **Argon2** | Best | Slow (good) | Recommended |
+| bcrypt | Good | Slow | Acceptable |
+| SHA-256 | Weak | Fast | Never use for passwords |
+| MD5 | Very Weak | Fast | Never use |
 
 ## CORS Configuration
 

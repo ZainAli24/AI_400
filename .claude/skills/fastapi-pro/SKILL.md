@@ -1,6 +1,6 @@
 ---
 name: fastapi-pro
-description: "Comprehensive FastAPI development skill for building production-ready APIs from hello world to professional applications. Use when creating FastAPI projects, REST APIs, microservices, or when user asks for Python web API development. Covers (1) Simple hello-world apps, (2) Structured applications, (3) CRUD APIs with databases (SQLAlchemy, MongoDB, Prisma), (4) Authentication with JWT/OAuth2, (5) Microservices with background tasks, (6) Docker deployment, (7) Testing with pytest. Trigger on requests like create FastAPI app, build REST API, add authentication, setup database, or deploy FastAPI."
+description: "Comprehensive FastAPI development skill for building production-ready APIs from hello world to professional applications. Use when creating FastAPI projects, REST APIs, microservices, or when user asks for Python web API development. Covers (1) Simple hello-world apps, (2) Structured applications, (3) CRUD APIs with databases (SQLAlchemy, SQLModel, MongoDB, Prisma), (4) Authentication with JWT/OAuth2, (5) Microservices with background tasks, (6) Docker deployment, (7) Testing with pytest. Trigger on requests like create FastAPI app, build REST API, add authentication, setup database, or deploy FastAPI."
 ---
 
 # FastAPI Pro
@@ -63,15 +63,55 @@ cp .env.example .env
 python main.py
 ```
 
-**Database options:** See [references/databases.md](references/databases.md) for MongoDB, Prisma, or other databases.
+**Database options:** See [references/databases.md](references/databases.md) for SQLModel, MongoDB, Prisma, or other databases.
 
-### 4. Auth API with JWT (`assets/auth-api/`)
+### 4. SQLModel API (Recommended) (`assets/sqlmodel-api/`)
+**When to use:** New FastAPI projects, cleaner syntax, less boilerplate, FastAPI-native ORM
+
+**Why SQLModel?**
+- Created by FastAPI's author (tiangolo)
+- Single class for Model + Validation (no separate schemas)
+- Native Python type hints (`int | None` instead of `Column(Integer)`)
+- Cleaner session management with `with Session(engine)`
+- Less code, same power
+
+**Structure:**
+```
+app/
+├── api/            # Endpoint routers
+├── core/           # Config settings
+├── db/             # Database setup
+└── models/         # SQLModel models (DB + validation combined)
+```
+
+**Setup:**
+```bash
+cp -r assets/sqlmodel-api/* ./
+pip install -r requirements.txt
+cp .env.example .env
+python main.py
+```
+
+**Key difference from SQLAlchemy:**
+```python
+# SQLModel - Single class does everything
+class Task(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    title: str
+
+# Clean session with context manager
+def get_session():
+    with Session(engine) as session:
+        yield session
+```
+
+### 5. Auth API with JWT (`assets/auth-api/`)
 **When to use:** User authentication, protected endpoints, secure APIs
 
 **Features:**
 - JWT token authentication
 - User registration and login
-- Password hashing with bcrypt
+- Password hashing with Argon2 (pwdlib) - most secure
 - Protected routes with OAuth2
 - Token-based authorization
 
@@ -91,7 +131,7 @@ python main.py
 
 **Advanced auth:** See [references/authentication.md](references/authentication.md) for OAuth2, RBAC, API keys.
 
-### 5. Microservice with Background Tasks (`assets/microservice/`)
+### 6. Microservice with Background Tasks (`assets/microservice/`)
 **When to use:** Async operations, email sending, data processing, job queues
 
 **Features:**
@@ -151,12 +191,15 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4
 
 ## Database Integration
 
-### Quick Start with SQLAlchemy
-Already included in `crud-api` template. For custom setup:
+### SQLModel (Recommended for New Projects)
+Use `sqlmodel-api` template for the cleanest FastAPI experience:
 
-1. Install: `pip install sqlalchemy`
+1. Install: `pip install sqlmodel`
 2. Configure DATABASE_URL in `.env`
 3. See [references/databases.md](references/databases.md) for complete patterns
+
+### SQLAlchemy
+Already included in `crud-api` template. Use for existing codebases or complex queries.
 
 ### MongoDB
 See [references/databases.md](references/databases.md) for Motor and Beanie ODM setup.
@@ -256,6 +299,21 @@ app.include_router(new_router.router, prefix="/api/v1", tags=["new"])
 ```
 
 ### Add Database Model
+
+**SQLModel (Recommended):**
+```python
+# app/models/product.py
+from sqlmodel import SQLModel, Field
+
+class Product(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    name: str
+    price: float
+
+# Tables auto-create on startup via lifespan
+```
+
+**SQLAlchemy:**
 ```python
 # app/models/product.py
 from sqlalchemy import Column, Integer, String
@@ -288,7 +346,7 @@ def send_notification(background_tasks: BackgroundTasks):
 
 Detailed guides available when needed:
 
-- **[databases.md](references/databases.md)** - SQLAlchemy, MongoDB, Prisma patterns and migrations
+- **[databases.md](references/databases.md)** - SQLModel, SQLAlchemy, MongoDB, Prisma patterns and migrations
 - **[authentication.md](references/authentication.md)** - JWT, OAuth2, RBAC, API keys, security best practices
 - **[testing.md](references/testing.md)** - pytest setup, fixtures, mocking, coverage
 - **[deployment.md](references/deployment.md)** - Docker, production config, monitoring, performance
