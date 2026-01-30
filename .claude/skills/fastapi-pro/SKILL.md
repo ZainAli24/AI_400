@@ -1,6 +1,6 @@
 ---
 name: fastapi-pro
-description: "Comprehensive FastAPI development skill for building production-ready APIs from hello world to professional applications. Use when creating FastAPI projects, REST APIs, microservices, or when user asks for Python web API development. Covers (1) Simple hello-world apps, (2) Structured applications, (3) CRUD APIs with databases (SQLAlchemy, SQLModel, MongoDB, Prisma), (4) Authentication with JWT/OAuth2, (5) Microservices with background tasks, (6) Docker deployment, (7) Testing with pytest. Trigger on requests like create FastAPI app, build REST API, add authentication, setup database, or deploy FastAPI."
+description: "Comprehensive FastAPI development skill for building production-ready APIs from hello world to professional applications. Use when creating FastAPI projects, REST APIs, microservices, or when user asks for Python web API development. Covers (1) Simple hello-world apps, (2) Structured applications, (3) CRUD APIs with databases (SQLAlchemy, SQLModel, MongoDB, Prisma), (4) Authentication with JWT/OAuth2, (5) Microservices with background tasks, (6) Docker deployment, (7) Testing with pytest, (8) Middleware patterns (CORS, custom middleware), (9) Lifespan events (startup/shutdown). Trigger on requests like create FastAPI app, build REST API, add authentication, setup database, add middleware, lifespan events, or deploy FastAPI."
 ---
 
 # FastAPI Pro
@@ -342,10 +342,136 @@ def send_notification(background_tasks: BackgroundTasks):
     return {"message": "Email will be sent"}
 ```
 
+## Middleware
+
+Middleware intercepts requests before they reach routes and responses before they return to clients.
+
+### Custom HTTP Middleware
+
+```python
+from fastapi import FastAPI, Request
+
+app = FastAPI()
+
+@app.middleware("http")
+async def add_process_time_header(request: Request, call_next):
+    import time
+    start_time = time.time()
+    response = await call_next(request)
+    process_time = time.time() - start_time
+    response.headers["X-Process-Time"] = f"{process_time:.4f} sec"
+    return response
+```
+
+### Middleware Execution Order
+
+Middlewares execute in **reverse order** (last defined = outermost, runs first):
+
+```python
+@app.middleware("http")
+async def middleware_a(request: Request, call_next):
+    print("A: before")
+    response = await call_next(request)
+    print("A: after")
+    return response
+
+@app.middleware("http")
+async def middleware_b(request: Request, call_next):
+    print("B: before")
+    response = await call_next(request)
+    print("B: after")
+    return response
+
+# Output order: B: before → A: before → [route] → A: after → B: after
+```
+
+### CORS Middleware (Complete)
+
+```python
+from fastapi.middleware.cors import CORSMiddleware
+
+origins = [
+    "http://localhost:3000",
+    "http://localhost:8000",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["X-Process-Time"],  # Custom headers browser can access
+)
+```
+
+**Important:** If `allow_credentials=True`, you cannot use `["*"]` for `allow_origins`.
+
+See [references/middleware-lifespan.md](references/middleware-lifespan.md) for more patterns.
+
+## Lifespan Events
+
+Modern way to handle startup/shutdown logic using `@asynccontextmanager`.
+
+### Basic Lifespan Pattern
+
+```python
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # STARTUP: Before app accepts requests
+    print("Starting up...")
+    app.state.settings = {"app_name": "My API", "version": "1.0.0"}
+    yield
+    # SHUTDOWN: When app is stopping
+    print("Shutting down...")
+
+app = FastAPI(lifespan=lifespan)
+
+@app.get("/info")
+def get_info():
+    return app.state.settings  # Access shared state
+```
+
+### Lifespan with Database
+
+```python
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: Create tables, initialize connections
+    create_db_and_tables()
+    app.state.db_pool = await create_pool()
+    yield
+    # Shutdown: Close connections, cleanup
+    await app.state.db_pool.close()
+
+app = FastAPI(lifespan=lifespan)
+```
+
+### Deprecated Patterns (DO NOT USE)
+
+```python
+# ❌ DEPRECATED - Don't use these:
+@app.on_event("startup")
+async def startup():
+    pass
+
+@app.on_event("shutdown")
+def shutdown():
+    pass
+```
+
+**Warning:** If you use `lifespan` parameter, `@app.on_event` handlers will NOT be called.
+
+See [references/middleware-lifespan.md](references/middleware-lifespan.md) for complete patterns.
+
 ## Reference Documentation
 
 Detailed guides available when needed:
 
+- **[middleware-lifespan.md](references/middleware-lifespan.md)** - Middleware patterns, CORS, lifespan events, app.state
 - **[databases.md](references/databases.md)** - SQLModel, SQLAlchemy, MongoDB, Prisma patterns and migrations
 - **[authentication.md](references/authentication.md)** - JWT, OAuth2, RBAC, API keys, security best practices
 - **[testing.md](references/testing.md)** - pytest setup, fixtures, mocking, coverage
