@@ -54,3 +54,27 @@ Yeh scaling kisi specific event, action, ya prediction par based hoti hai. Hum p
 
 # Class Visual Diagrame:
 ![alt text](image.png)
+
+
+----------
+
+## Spikes in Cloud Computing:
+Cloud computing mein **Spikes** (سپائکس) ka matlab hai bohot kam waqt mein computer resources (jaise CPU, RAM, ya bandwidth) ya website traffic mein **tez aur achanak izafa (sudden and sharp increase).** 
+
+### Roman Urdu mein tafseel:
+
+- **Asan Lafzon Mein:** Jab aapki website ya app par achanak lakhon users aa jayen ya koi viral video/sale ki wajah se system par bohot zyada bojh parh jaye, toh us achanak badhne wali demand ko "Spike" kehte hain.
+
+- **Traffic Spike:** User traffic mein tezi.
+
+- **Resource Spike**: Server par CPU ya memory ka usage achanak 100% ho jana.
+
+- **Waja**: Marketing campaigns, viral content, Happy Friday jaisi sales, ya kabhi cyber attacks (DDoS) ki wajah se bhi spikes aati hain.
+
+- **Cloud ka Role:** Cloud computing mein "Auto-scaling" ke zariye in spikes ko handle kiya jata hai, taake server crash na ho. 
+
+
+#### **Simple Example:**
+Agar aapke store par aam dinon mein 100 log aate hain aur eid wale din 10,000 log achanak aa jayen, toh yeh traffic "spike" hai. Cloud mein hum foran extra servers shuru kar dete hain taake sab ko service mil sake.  
+
+-------------

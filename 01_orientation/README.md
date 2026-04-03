@@ -18,3 +18,22 @@ A collection of hands-on skills for students to explore and practice when learni
 | **skill-creator** | Guide for creating effective skills that extend Claude's capabilities with specialized knowledge, workflows, or tool integrations |
 | **theme-factory** | Toolkit for styling artifacts (slides, docs, reports, HTML) with 10 pre-set professional themes or custom on-the-fly theme generation |
 | **xlsx** | Comprehensive spreadsheet creation, editing, and analysis with support for formulas, formatting, data analysis, and visualization |
+
+
+----------------------
+
+# Keep these **Important Words** in mind:
+1. MultiAgent Orchestration
+2. Pub Sub Model - detail link: (https://share.google/aimode/SmojU9o3HdtKb5f7U)
+3. GitOps
+
+--------
+
+4. Realiebility
+5. hallucination
+
+-----------
+
+6. Scalability
+>
+7. Context Management
