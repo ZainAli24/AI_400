@@ -630,5 +630,46 @@ pytest
 
 ---
 
+## FastAPI Automatic Type Conversion — Path Parameters
+
+### Kaise kaam karta hai:
+
+```
+URL: /tasks/3
+         ↓
+FastAPI URL se "3" string ke tor pe uthata hai
+         ↓
+Dekh ta hai: task_id: int  ← type annotation
+         ↓
+"3" ko int(3) mein convert karta hai automatically
+         ↓
+Function ko 3 (integer) de deta hai
+```
+
+---
+
+### Aghar conversion possible nahi:
+
+```
+URL: /tasks/abc
+         ↓
+FastAPI: "abc" ko int mein convert karne ki koshish
+         ↓
+FAIL! → Automatically 422 Unprocessable Entity error return karta hai
+```
+
+Tum khud kuch nahi likhte — FastAPI yeh sab type annotation `task_id: int` dekh kar automatically karta hai. Yahi FastAPI ki power hai.
+
+---
+
+### Summary:
+
+| Annotation                | URL value  | Function ko milta hai |
+|---------------------------|------------|----------------------|
+| `task_id: int`            | /tasks/3   | 3 (integer)          |
+| `task_id: int`            | /tasks/abc | 422 Error            |
+| `task_id` (koi type nahi) | /tasks/3   | "3" (string)         |
+
+Isliye `task_id: int` likhna zaroori tha — warna `task_id < 1` ka comparison string pe hota aur crash karta.
 
 ---------------------

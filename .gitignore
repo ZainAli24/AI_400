@@ -23,3 +23,8 @@ uv.lock
 pytest.ini
 
 .env
+
+02_fastapi_pytest_intro\revision_refresher
+pydan_prac.py
+rev.py
+test_rev.py
