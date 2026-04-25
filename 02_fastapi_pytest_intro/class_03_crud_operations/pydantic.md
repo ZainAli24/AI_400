@@ -196,3 +196,156 @@ Return type annotation `-> TaskResponse` bhi response model ki tarah kaam karta 
 
 > **`-> TaskResponse`** — newer FastAPI mein filtering karta hai, simple cases ke liye kaafi hai.
 > **`response_model=`** — jab extra control chahiye (include/exclude specific fields), tab use karo.
+
+<br>
+
+---
+
+## `exclude_unset` — Kya Matlab Hai?
+
+**`unset`** matlab — jo fields user ne request mein **bheje hi nahi.**
+
+```python
+class TaskUpdate(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    status: str | None = None
+```
+
+User sirf yeh bhejta hai:
+```json
+{"status": "completed"}
+```
+
+Pydantic model ke andar kya hota hai:
+
+```python
+task_update.title        # → None   ← user ne nahi bheja, default laga
+task_update.description  # → None   ← user ne nahi bheja, default laga
+task_update.status       # → "completed"  ← user ne bheja
+```
+
+`title` aur `description` **unset** hain — user ne touch nahi kiya inhe.
+
+---
+
+## Part 6 — `model_dump(exclude_unset=True)` — PATCH ka Standard Pattern
+
+### Problem — bina `exclude_unset` ke
+
+```python
+task.update(task_update.model_dump())
+# model_dump() returns:
+# {"title": None, "description": None, "status": "completed"}
+```
+
+**Result — data destroy ho gaya:**
+```python
+{"id": 1, "title": None, "description": None, "status": "completed"}
+#                  ^^^^              ^^^^
+#         user ne ye nahi diya tha, par None ho gaye!
+```
+
+### Solution — `exclude_unset=True`
+
+```python
+update_data = task_update.model_dump(exclude_unset=True)
+# → {"status": "completed"}   ← sirf jo user ne bheja
+
+task.update(update_data)
+# → {"id": 1, "title": "Learn FastAPI", "description": "Important", "status": "completed"}
+#              title aur description safe rahe ✅
+```
+
+### Teen Cases
+
+```python
+# Case 1 — sirf status:
+# Request: {"status": "completed"}
+# update_data = {"status": "completed"}
+# title aur description safe ✅
+
+# Case 2 — sirf title:
+# Request: {"title": "Learn Pydantic"}
+# update_data = {"title": "Learn Pydantic"}
+# status aur description safe ✅
+
+# Case 3 — sab kuch:
+# Request: {"title": "New", "status": "done", "description": "Updated"}
+# update_data = {"title": "New", "status": "done", "description": "Updated"}
+# sab update ✅
+```
+
+### One-line Rule
+
+```
+model_dump()                   → sari fields return karta hai (None bhi)
+model_dump(exclude_unset=True) → sirf user ne jo bheja wo return karta hai
+```
+
+---
+
+## Part 7 — `model_dump(exclude_unset=True)` vs `response_model_exclude_unset=True`
+
+### Common Confusion
+
+Ye dono similar lagte hain lekin **bilkul alag jagah kaam karte hain.**
+
+```
+model_dump(exclude_unset=True)       → INPUT filter karta hai  (kya UPDATE hoga)
+response_model_exclude_unset=True    → OUTPUT filter karta hai (kya RETURN hoga)
+```
+
+### `response_model_exclude_unset=True` kya karta hai?
+
+Response mein se woh fields hata deta hai jo default value pe hain:
+
+```python
+@app.patch("/tasks/{task_id}", response_model=TaskResponse, response_model_exclude_unset=True)
+def update_task(task_id: int, ...):
+    return {"id": 1, "title": "Learn FastAPI"}
+
+# Response aayega: {"id": 1, "title": "Learn FastAPI"}
+# status aur description response mein nahi aayenge — unset hain
+```
+
+### Ye PATCH ka bug solve nahi karta
+
+```python
+@app.patch("/tasks/{task_id}", response_model_exclude_unset=True)
+def update_task(task_id: int, task_update: TaskUpdate):
+
+    update_data = task_update.model_dump()  # ← exclude_unset nahi lagaya
+    # {"title": None, "description": None, "status": "completed"}
+
+    task.update(update_data)  # ← title aur description STILL None ho gaye!
+
+    return task  # response clean lag raha hai — lekin data pehle hi kharab ho chuka
+```
+
+`response_model_exclude_unset=True` ne sirf **response** clean kiya — data toh already corrupt ho chuka tha.
+
+### Flow Diagram
+
+```
+User Request
+     ↓
+[model_dump(exclude_unset=True)]   ← input filter — sirf bheje fields nikalo
+     ↓
+Database / Dict update hota hai
+     ↓
+[response_model_exclude_unset=True] ← output filter — sirf set fields return karo
+     ↓
+User ko Response
+```
+
+### Summary Table
+
+| | `model_dump(exclude_unset=True)` | `response_model_exclude_unset=True` |
+|---|---|---|
+| Kahan kaam karta hai | **Input** (request body) | **Output** (response) |
+| Kya karta hai | Sirf bheje fields nikalta hai update ke liye | Sirf set fields response mein bhejta hai |
+| PATCH bug solve karta hai? | ✅ haan | ❌ nahi |
+| Kahan likhte hain | Function ke andar | Route decorator mein |
+
+> **PATCH mein `model_dump(exclude_unset=True)` zaroori hai** — `response_model_exclude_unset` iska replacement nahi hai.
