@@ -28,3 +28,8 @@ pytest.ini
 pydan_prac.py
 rev.py
 test_rev.py
+
+
+.env.local
+.env.sample
+
