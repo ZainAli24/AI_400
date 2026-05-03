@@ -148,3 +148,81 @@ with Session(engine) as session:
 
 -------
 
+
+# `if` ka Behaviour — `return` ke Saath aur Bina `return` ke
+
+---
+
+## Case 1 — `if` ke andar `return` hai
+
+```python
+def get_task_by_filter(get_task: Update_task, ...):
+    if get_task.title:
+        tasks = session.exec(...).all()
+        return tasks        # ← yahan function KHATAM
+
+    if get_task.description:   # ← sirf tab chalega jab upar wala if False tha
+        tasks = session.exec(...).all()
+        return tasks        # ← function KHATAM
+
+    if get_task.status:        # ← sirf tab chalega jab dono upar wale False the
+        tasks = session.exec(...).all()
+        return tasks
+```
+
+**`return` matlab: function wahan ruk jata hai — baaki koi bhi line nahi chalti.**
+
+```
+title diya  → pehla if True  → return → STOP (description/status if kabhi nahi chalega)
+title nahi  → pehla if False → aage jao
+description → doosra if True → return → STOP
+status diya → teesra if True → return → STOP
+```
+
+> Ye **intentional** hai filter mein — sirf ek filter at a time check karna tha.
+
+---
+
+## Case 2 — `if` ke andar `return` nahi
+
+```python
+def update_task(...):
+    if task.title:
+        db_task.title = task.title       # koi return nahi
+
+    if task.description:                 # ← hamesha check hoga
+        db_task.description = task.description
+
+    if task.status:                      # ← hamesha check hoga
+        db_task.status = task.status
+
+    session.add(db_task)   # ← teeno if ke baad ye chale ga
+```
+
+**`return` nahi hai — teeno `if` independently check hote hain, ek ke True/False hone se doosre pe koi asar nahi.**
+
+```
+title + status diya → pehla if True → title update → teesra if True → status update ✅
+sirf status diya    → pehla if False → doosra if False → teesra if True → sirf status ✅
+teeno diye          → teeno if True → teeno update ✅
+```
+
+> Ye **intentional** hai update mein — jo bhi fields bheje saari update ho jayen.
+
+---
+
+## Summary Table
+
+| | `if` ke andar `return` | Baaki `if` chalenge? |
+|---|---|---|
+| **Filter** | ✅ Hai | ❌ Nahi — pehla match hote hi STOP |
+| **Update** | ❌ Nahi | ✅ Haan — teeno independently chalte hain |
+
+---
+
+## Ek Line Mein
+
+> **`if` ke andar `return` ho toh function wahan ruk jaata hai — baaki `if` blocks nahi chalte. `return` nahi ho toh saare `if` blocks apni apni condition ke mutabik independently chalte hain.**
+
+---
+
