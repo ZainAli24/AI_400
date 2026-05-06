@@ -15,11 +15,17 @@ acccess_token = OAuth2PasswordBearer(tokenUrl="login")
 password_hash = PasswordHash((Argon2Hasher(), ))
 
 
-SECRET_KEY="Zain123321"
-ALOGRITHUM="HS256"
+# Generate a secure random secret key:
+import secrets
+secret_key = secrets.token_hex(32)  # Generates a 64-character hexadecimal string (256 bits)
+print(f"Generated Secret Key: {secret_key}")
 
 
 load_dotenv(".env")
+
+SECRET_KEY = os.getenv("SECRET_KEY")
+ALOGRITHUM = os.getenv("ALGORITHM")
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES"))
 
 
 app = FastAPI()
@@ -82,7 +88,7 @@ def verify_password(password: str, hashed_password:str):
 # Create JWT Token:
 def create_access_token(user_data: dict, expire_time: Optional[timedelta] = None):
     encode_data = user_data.copy()
-    expire = datetime.utcnow() + (expire_time or timedelta(minutes=5))
+    expire = datetime.utcnow() + (expire_time or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
     encode_data.update({"exp": expire})
 
     token = jwt.encode(encode_data, SECRET_KEY, ALOGRITHUM)

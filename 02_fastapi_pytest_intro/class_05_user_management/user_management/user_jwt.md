@@ -950,3 +950,411 @@ verify_token(token)
                                  ↓
                            401 "Could not validate credentials"
 ```
+
+---
+
+## Enumeration Attack — Security Concept
+
+---
+
+### Normal Soch — Jo Galat Lagta Sahi
+
+Beginner developer sochta hai:
+> "User ko helpful message dena chahiye — agar email galat hai toh batao 'Email exist nahi karta', agar password galat hai toh batao 'Password galat hai'"
+
+Yeh user-friendly lagta hai — lekin yeh ek **badi security mistake** hai.
+
+---
+
+### Enumeration Attack Kya Hai?
+
+**Enumeration** ka matlab: **List banana** — ek ek karke check karna.
+
+Attacker ke paas 10,000 emails ki list hai (data breach se mili). Ab woh check karna chahta hai ke in mein se kaun si emails tumhari app mein registered hain.
+
+**Agar code alag alag messages deta hai:**
+
+```
+POST /login {"email": "zain@gmail.com", "password": "abc"}
+Response: "Password galat hai!"
+          ↑
+          Attacker ko pata chal gaya: "zain@gmail.com EXIST KARTA HAI!"
+
+POST /login {"email": "unknown@gmail.com", "password": "abc"}
+Response: "Email exist nahi karta!"
+          ↑
+          Attacker ko pata chal gaya: "yeh email NAHI hai app mein"
+```
+
+**Attacker 10,000 emails bhejta hai — valid emails ki list ban jaati hai:**
+
+```
+✅ zain@gmail.com    → exist karta hai
+❌ random@gmail.com  → nahi hai
+✅ sara@gmail.com    → exist karti hai
+...
+```
+
+Ab attacker in valid emails pe targeted attacks kar sakta hai — password brute force, phishing, social engineering.
+
+---
+
+### Solution — Generic Message Do
+
+```python
+# ❌ GALAT — alag alag messages
+if not user:
+    raise HTTPException(detail="Email exist nahi karta!")
+if not verify_password(...):
+    raise HTTPException(detail="Password galat hai!")
+
+# ✅ SAHI — ek hi generic message dono cases mein
+raise HTTPException(
+    status_code=401,
+    detail="Invalid email or password!"
+)
+```
+
+**Ab attacker ko kuch pata nahi chalta:**
+
+```
+POST /login {"email": "zain@gmail.com", "password": "abc"}
+Response: "Invalid email or password!"
+
+POST /login {"email": "unknown@gmail.com", "password": "abc"}
+Response: "Invalid email or password!"
+```
+
+Dono cases mein same response — attacker andhere mein hai.
+
+---
+
+### Real Life Analogy
+
+> Bank mein jao aur poocho: "Kya is naam ka account hai?"
+>
+> **Bura bank:** "Haan hai!" ya "Nahi hai!" — koi bhi pata laga sakta hai
+>
+> **Acha bank:** "Hum account information share nahi karte" — hamesha same jawab
+
+---
+
+### Summary Table
+
+| Cheez | Galat | Sahi |
+|---|---|---|
+| Email nahi mila | "Email exist nahi karta" | "Invalid email or password" |
+| Password galat | "Password galat hai" | "Invalid email or password" |
+| Kyun? | Attacker email list bana sakta hai | Attacker ko kuch pata nahi chalta |
+| Is attack ka naam | Enumeration Attack | Generic Error Message se rokein |
+
+---
+
+## Refresh Tokens — Kya Hai Aur Kyun Chahiye?
+
+---
+
+### Problem — Abhi Ka System
+
+```
+Access Token → 15 min mein expire
+                    ↓
+User kaam kar raha tha... token expire ho gaya
+                    ↓
+User ko dobara login karna parega
+                    ↓
+User: 😤 "Bhai yaar! Mein form bhar raha tha!"
+```
+
+**Dono options bure hain:**
+
+| Option | Problem |
+|---|---|
+| Token jaldi expire karo (5 min) | User baar baar login kare — irritating |
+| Token der se expire karo (30 days) | Token chori ho gaya toh 30 din tak hacker andar — dangerous |
+
+---
+
+### Solution — Do Tokens Ka System
+
+```
+Access Token  → Short life (15 min) — har request mein use hota hai
+Refresh Token → Long life (7 days)  — sirf naya access token lene ke liye
+```
+
+---
+
+### Kaise Kaam Karta Hai?
+
+```
+━━━━━━━━ STEP 1: Login ━━━━━━━━
+
+User → Login kiya
+Server → DO tokens diye:
+         access_token  = "eyJ..."  (15 min)
+         refresh_token = "ryJ..."  (7 days)
+User → Dono apne paas rakh liye
+
+
+━━━━━━━━ STEP 2: Normal Requests (15 min tak) ━━━━━━━━
+
+User → GET /profile + access_token
+Server → Valid hai → Data return ✅
+
+
+━━━━━━━━ STEP 3: Access Token Expire Ho Gaya ━━━━━━━━
+
+User → GET /profile + access_token
+Server → Token expired! ❌ 401 error
+
+User → POST /refresh + refresh_token  ← Login nahi, sirf refresh
+Server → Refresh token valid hai?
+         Haan → Naya access_token do (15 min wala)
+         Nahi → Login karo
+
+User → Naya access_token mil gaya → Request dobara karo ✅
+
+
+━━━━━━━━ STEP 4: Refresh Token Bhi Expire (7 din baad) ━━━━━━━━
+
+User → POST /refresh + refresh_token
+Server → Refresh token bhi expire! ❌
+User → Ab actually login karna parega
+```
+
+---
+
+### Kyun Secure Hai?
+
+```
+Agar access_token chori ho gaya:
+  → Sirf 15 minute kaam karega
+  → Hacker 15 min mein zyada kuch nahi kar sakta
+
+Agar refresh_token chori ho gaya:
+  → Server revoke kar sakta hai (blacklist)
+  → Ya token rotate kar sakte hain — purana invalid, naya do
+```
+
+---
+
+### Agar Hacker Refresh Token Chura Le — Kya Hoga?
+
+Hacker refresh token le ke `/refresh` pe jaega aur naye access tokens leta rahega — baar baar:
+
+```
+Hacker → POST /refresh + stolen_refresh_token
+Server → Valid hai → Naya access token do ✅
+Hacker → App use karta raha... 7 din tak! 💥
+```
+
+Yani **7 din tak hacker tumhari app use kar sakta hai** bina login ke.
+
+**Solution — Server Refresh Token Revoke Kar Sakta Hai:**
+
+Isliye refresh token **DB mein store hota hai** — taake zaroorat padne pe server use invalid kar sake:
+
+```
+User: "Bhai mera phone chori ho gaya!"
+Server: DB mein us user ka refresh token delete karo
+              ↓
+Hacker → POST /refresh + stolen_refresh_token
+Server → DB mein check kiya → Yeh token exist nahi karta!
+Server → 401 Unauthorized ❌
+Hacker → Bahar! ✅
+```
+
+Access token mein yeh possible nahi — woh DB mein hota hi nahi, sirf expire hone ka wait karna padta hai.
+
+**Comparison:**
+
+| | Access Token | Refresh Token |
+|---|---|---|
+| Chori hua toh | 15 min mein khud expire | Dangerous — 7 din tak valid |
+| Rokne ka tareeqa | Kuch nahi, sirf wait karo | DB se delete karo — foran band |
+| Isliye DB mein | Nahi rakha jaata | Rakha jaata hai |
+
+> **One line:** Access token chori = chota nuksaan (15 min). Refresh token chori = bada nuksaan — lekin server DB se delete karke foran rok sakta hai.
+
+---
+
+### Access Token vs Refresh Token — Farq
+
+| Cheez | Access Token | Refresh Token |
+|---|---|---|
+| Life | 15 min | 7 days |
+| Kab use hota hai | Har protected request pe | Sirf naya access token lene ke liye |
+| Kahan bhejte hain | Har API call mein header | Sirf `/refresh` endpoint pe |
+| Agar chori hua | 15 min mein expire | Server revoke kar sakta hai |
+| DB mein store | Nahi | Haan — track karne ke liye |
+
+---
+
+### Real Life Analogy
+
+> **Access Token** = Shopping mall ka entry pass — 15 min ke liye valid, har gate pe dikhao
+>
+> **Refresh Token** = Reception pe rakha master card — sirf naya pass banwane ke liye jaate ho, har gate pe nahi dikhate
+
+---
+
+### Important Note — Abhi Ke Liye Sirf Concept
+
+Abhi ke level pe **sirf concept samajhna kaafi hai.** Implementation mein yeh cheezein aati hain:
+
+- Refresh token DB mein store karna
+- `/refresh` endpoint banana
+- Token rotation (purana refresh token invalidate karna)
+- Blacklisting
+
+Yeh sab intermediate level ka kaam hai — pehle basic JWT solid karo.
+
+---
+
+## Common Mistakes — 4 Galtiyan Jo Beginners Karte Hain
+
+---
+
+### Mistake 1 — Token Mein Sensitive Data Daalna
+
+```python
+# ❌ GALAT — password token mein daala
+create_access_token({
+    "sub": "zain@gmail.com",
+    "password": "mypassword123",   # ← KABHI MAT KARO!
+    "credit_card": "1234-5678"     # ← KABHI MAT KARO!
+})
+```
+
+**Kyun galat hai?**
+
+Token ka Payload **Base64** se bana hota hai — encryption nahi! Koi bhi online tool se decode kar sakta hai:
+
+```
+Token: eyJzdWIiOiJ6YWluQGdtYWlsLmNvbSIsInBhc3N3b3JkIjoibXlwYXNzd29yZDEyMyJ9
+
+Koi bhi decode kare → {"sub": "zain@gmail.com", "password": "mypassword123"}
+                                                   ↑
+                                              Seedha dikh raha hai!
+```
+
+**Sahi tareeqa:**
+
+```python
+# ✅ SAHI — sirf identifier daalo
+create_access_token({
+    "sub": "zain@gmail.com"   # ← Sirf email, kuch aur nahi
+})
+```
+
+> **Rule:** Token mein sirf woh daalo jo public ho sake — email ya user ID. Password, credit card, secret info kabhi nahi.
+
+---
+
+### Mistake 2 — SECRET_KEY Hardcode Karna
+
+```python
+# ❌ GALAT — code mein likhi hai
+SECRET_KEY = "Zain123321"
+```
+
+**Kyun galat hai?**
+
+```
+Yeh code GitHub pe push hua
+         ↓
+Duniya ne dekha: SECRET_KEY = "Zain123321"
+         ↓
+Koi bhi is key se fake tokens bana sakta hai
+         ↓
+Tumhari poori app ka security khatam! 💥
+```
+
+**Sahi tareeqa:**
+
+```python
+# ✅ SAHI — .env se lo
+SECRET_KEY = os.getenv("SECRET_KEY")
+```
+
+`.env` file mein:
+```
+SECRET_KEY=a3f8c2d4e1b9074f6a2c8e5d3f1b7a9c4e2d8f6b3a1c9e7d5f2b4a8c6e0d3f1
+```
+
+`.gitignore` mein:
+```
+.env
+```
+
+> **Rule:** SECRET_KEY hamesha `.env` mein — code mein kabhi nahi. Aur `openssl rand -hex 32` se secure key banao.
+
+---
+
+### Mistake 3 — WWW-Authenticate Header Missing Karna
+
+```python
+# ❌ GALAT — header missing
+raise HTTPException(
+    status_code=401,
+    detail="Could not validate credentials"
+)
+
+# ✅ SAHI — header include karo
+raise HTTPException(
+    status_code=401,
+    detail="Could not validate credentials",
+    headers={"WWW-Authenticate": "Bearer"}   # ← Yeh zaroori hai
+)
+```
+
+**Kyun zaroori hai?**
+
+```
+WWW-Authenticate: Bearer ke bina:
+Browser/Client → 401 aaya
+Browser: "Kaise authenticate karun? Koi hint nahi!" 😕
+Result: Browser credentials prompt nahi dikhata
+
+WWW-Authenticate: Bearer ke saath:
+Browser: "Acha! Bearer token chahiye" → Sahi action leta hai ✅
+```
+
+> **Rule:** Jab bhi 401 Unauthorized deta ho — `WWW-Authenticate: Bearer` header hamesha saath do.
+
+---
+
+### Mistake 4 — /token Endpoint Pe JSON Bhejna
+
+Yeh mistake tab hoti hai jab `OAuth2PasswordRequestForm` use karo — jo form data expect karta hai, JSON nahi.
+
+```
+# ❌ GALAT — JSON bheja
+POST /token
+Content-Type: application/json
+{"username": "zain@gmail.com", "password": "abc"}
+→ 422 Unprocessable Content Error!
+
+# ✅ SAHI — Form data bhejo
+POST /token
+Content-Type: application/x-www-form-urlencoded
+username=zain@gmail.com&password=abc
+→ 200 OK ✅
+```
+
+**Kyun?**
+
+`OAuth2PasswordRequestForm` OAuth2 standard follow karta hai — aur OAuth2 standard mein login **form data** se hota hai, JSON se nahi.
+
+> **Note:** Agar tumhara `/login` endpoint JSON leta hai (jaise tumhara current code) — toh yeh mistake tumhare pe apply nahi hoti. Lekin jab kabhi `OAuth2PasswordRequestForm` use karo toh yaad rakho: form data bhejo, JSON nahi.
+
+---
+
+### Charon Mistakes — Quick Reference
+
+| # | Mistake | Nuksaan | Fix |
+|---|---|---|---|
+| 1 | Token mein password daalna | Koi bhi decode kar sakta hai | Sirf email/ID daalo |
+| 2 | SECRET_KEY hardcode karna | GitHub pe visible → fake tokens | `.env` file mein rakho |
+| 3 | WWW-Authenticate header missing | Browser sahi action nahi leta | Hamesha 401 ke saath do |
+| 4 | `/token` pe JSON bhejna | 422 error aata hai | Form data use karo |
