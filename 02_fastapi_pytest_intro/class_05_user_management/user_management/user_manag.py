@@ -2,11 +2,21 @@ from fastapi import FastAPI, Depends, status, HTTPException
 from sqlmodel import SQLModel, Session, create_engine, select, Field
 from dotenv import load_dotenv
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from pwdlib import PasswordHash
 from pwdlib.hashers.argon2 import Argon2Hasher
+from jose import jwt, JWTError, ExpiredSignatureError
+from typing import Optional
+from fastapi.security import OAuth2PasswordBearer
+
+acccess_token = OAuth2PasswordBearer(tokenUrl="login")
+
 
 password_hash = PasswordHash((Argon2Hasher(), ))
+
+
+SECRET_KEY="Zain123321"
+ALOGRITHUM="HS256"
 
 
 load_dotenv(".env")
@@ -69,6 +79,61 @@ def verify_password(password: str, hashed_password:str):
     return password_hash.verify(password, hashed_password)
 
 
+# Create JWT Token:
+def create_access_token(user_data: dict, expire_time: Optional[timedelta] = None):
+    encode_data = user_data.copy()
+    expire = datetime.utcnow() + (expire_time or timedelta(minutes=5))
+    encode_data.update({"exp": expire})
+
+    token = jwt.encode(encode_data, SECRET_KEY, ALOGRITHUM)
+    return {"token_type": "bearer", "access_token": token}
+
+
+# Verify JWT Token:
+def verify_token(token: str) -> Optional[dict]:
+    try:
+        user_obj = jwt.decode(token, SECRET_KEY, algorithms=[ALOGRITHUM])
+        return user_obj
+    except ExpiredSignatureError:
+        return "expired"
+    except JWTError:
+        return None
+    
+
+# Get_access user:
+def get_access_user(token = Depends(acccess_token), session: Session = Depends(get_session)):
+
+    credentailHttpException = HTTPException(
+        status_code = status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentails",
+        headers={"WWW-Authenticate": "Baerer"},
+    )
+
+
+    user_data = verify_token(token)
+
+    if user_data == "expired":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, 
+            detail="Token has expired! Please login again.",
+            headers={"WWW-Authenticate": "Baerer"}
+        )
+
+    if not user_data:
+        raise credentailHttpException
+    
+    email = user_data.get("sub")
+    if not email:
+        raise credentailHttpException
+    
+    user = session.exec(select(User).where(User.email == email)).first()
+    if not user:
+        raise credentailHttpException
+    
+    return user
+
+
+
 
 # Create user account:
 @app.post("/signin")
@@ -91,7 +156,13 @@ def login_user(user: loginData, session: Session = Depends(get_session)):
     if session.exec(select(User).where(User.email == user.email)).first():
         user_data = session.exec(select(User).where(User.email == user.email)).first()
         if verify_password(user.password, user_data.password):
-            return {"message": f"Welcome back, {user_data.name}!"}
+            token = create_access_token({"sub": user_data.email})
+            return token
     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password! Please try again or create an account if you don't have one.")
 
+
+
+@app.get("/profile")
+def get_profile_data(user: User = Depends(get_access_user)):
+    return {"name": user.name, "email": user.email}
 
