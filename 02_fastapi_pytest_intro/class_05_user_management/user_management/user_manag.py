@@ -2,11 +2,11 @@ from fastapi import FastAPI, Depends, status, HTTPException
 from sqlmodel import SQLModel, Session, create_engine, select, Field
 from dotenv import load_dotenv
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pwdlib import PasswordHash
 from pwdlib.hashers.argon2 import Argon2Hasher
 from jose import jwt, JWTError, ExpiredSignatureError
-from typing import Optional
+from typing import Optional, Literal
 from fastapi.security import OAuth2PasswordBearer
 
 acccess_token = OAuth2PasswordBearer(tokenUrl="login")
@@ -16,9 +16,9 @@ password_hash = PasswordHash((Argon2Hasher(), ))
 
 
 # Generate a secure random secret key:
-import secrets
-secret_key = secrets.token_hex(32)  # Generates a 64-character hexadecimal string (256 bits)
-print(f"Generated Secret Key: {secret_key}")
+# import secrets
+# secret_key = secrets.token_hex(32)  # Generates a 64-character hexadecimal string (256 bits)
+# print(f"Generated Secret Key: {secret_key}")
 
 
 load_dotenv(".env")
@@ -58,6 +58,39 @@ class loginData(SQLModel):
     password: str
 
 
+#  Task table
+class Tasks(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    title: str
+    description: str | None = Field(default=None)
+    status: str = Field(default="pending")
+    owner_id: int = Field(foreign_key="user.id")
+    created_at : datetime = Field(default_factory=datetime.now)
+
+
+# create task:
+class Create_Task(SQLModel):
+    title: str
+    description: str | None = Field(default=None)
+    status: Literal["pending", "in progress", "completed"] = Field(default="pending")
+
+
+# Task response model:
+class Task_Response(SQLModel):
+    id: int
+    title: str
+    description: str | None = Field(default=None)
+    status: str 
+    created_at : datetime
+
+
+# Update Task model:
+class Update_task(SQLModel):
+    title: str | None = Field(default=None)
+    description: str | None = Field(default=None)
+    status: str | None = Field(default=None)
+
+    
 
 # create table function:
 def create_table():
@@ -88,7 +121,7 @@ def verify_password(password: str, hashed_password:str):
 # Create JWT Token:
 def create_access_token(user_data: dict, expire_time: Optional[timedelta] = None):
     encode_data = user_data.copy()
-    expire = datetime.utcnow() + (expire_time or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+    expire = datetime.now(timezone.utc) + (expire_time or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
     encode_data.update({"exp": expire})
 
     token = jwt.encode(encode_data, SECRET_KEY, ALOGRITHUM)
@@ -159,8 +192,8 @@ def create_user(user:UserData,  session: Session = Depends(get_session)):
 # login user:
 @app.post("/login")
 def login_user(user: loginData, session: Session = Depends(get_session)):
-    if session.exec(select(User).where(User.email == user.email)).first():
-        user_data = session.exec(select(User).where(User.email == user.email)).first()
+    user_data = session.exec(select(User).where(User.email == user.email)).first()
+    if user_data:
         if verify_password(user.password, user_data.password):
             token = create_access_token({"sub": user_data.email})
             return token
@@ -172,3 +205,61 @@ def login_user(user: loginData, session: Session = Depends(get_session)):
 def get_profile_data(user: User = Depends(get_access_user)):
     return {"name": user.name, "email": user.email}
 
+
+@app.post("/tasks")
+def create_task(task:Create_Task, user: User = Depends(get_access_user), session: Session = Depends(get_session)):
+    db_task = Tasks(title=task.title, description=task.description, status=task.status, owner_id=user.id)
+    session.add(db_task)
+    session.commit()
+    session.refresh(db_task)
+    return {"message": f"{user.name}'s Task '{task.title}' has been created successfully!"}
+
+
+
+@app.get("/tasks", response_model=list[Task_Response])
+def get_user_tasks(user: User = Depends(get_access_user), session: Session = Depends(get_session)):
+    user_tasks = session.exec(select(Tasks).order_by(Tasks.id).where(Tasks.owner_id == user.id)).all()
+    if user_tasks:
+        return user_tasks
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="You don't have any tasks yet! Please create a task to see it here.")
+
+
+# filter tasks by status: order_by(Tasks.id):
+@app.get("/tasks/filter", response_model=list[Task_Response])
+def filter_task_by_status(task_status: Literal["pending", "in-progress", "completed"] = "pending", user: User = Depends(get_access_user), session: Session = Depends(get_session)):
+    tasks = session.exec(select(Tasks).order_by(Tasks.id).where(Tasks.owner_id == user.id, Tasks.status == task_status)).all()
+    if tasks:
+        return tasks
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"You don't have any '{task_status}' tasks yet!")
+    
+
+
+# update task:
+@app.put("/tasks/update/{task_id}")
+def update_task_by_id(task_id: int, update_task:Update_task, user: User = Depends(get_access_user), session: Session = Depends(get_session)):
+    db_task: Tasks = session.exec(select(Tasks).where(Tasks.owner_id == user.id, Tasks.id == task_id)).first()
+    if not db_task:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"You don't have any task with this id: {task_id}!")
+    if update_task.title:
+        db_task.title = update_task.title
+    if update_task.description:
+        db_task.description = update_task.description
+    if update_task.status:
+        db_task.status = update_task.status
+    
+    session.add(db_task)
+    session.commit()
+    session.refresh(db_task)
+    return {"message": f"{user.name}'s Task '{db_task.title}' has been updated successfully!"}
+
+
+
+# delete task:
+@app.delete("/tasks/delete/{task_id}")
+def delete_task_by_id(task_id: int, user: User = Depends(get_access_user), session: Session = Depends(get_session)):
+    db_task : Tasks = session.exec(select(Tasks).where(Tasks.id == task_id, Tasks.owner_id == user.id))
+    if not db_task:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"You don't have any task with this id: {task_id}!")
+    session.delete(db_task)
+    session.commit()
+    return {"message": f"{user.name}'s Task with id: {task_id} has been deleted successfully!"}
