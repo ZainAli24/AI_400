@@ -269,3 +269,165 @@ select(Tasks).where(Tasks.owner_id == user.id, Tasks.status == task_status)
 | `.where(c1, c2)` comma | AND — dono conditions saath true honni chahiye |
 | Ek bhi false | Woh row return nahi hogi |
 | `.all()` | Sab matching rows list mein return |
+
+---
+
+## Pytest — JWT Protected Routes Ka Testing
+
+---
+
+### Problem — Bina Testing Ke
+
+```
+Tumne code likha → Postman mein test kiya → "Kaam kar raha hai!" ✅
+
+Lekin...
+Kal koi change kiya → Poori app dobara Postman mein test karo?? 😤
+Koi route kab toot gaya pata hi nahi chala?? 😤
+```
+
+**Pytest solution:** Ek baar tests likho → har baar ek command se sab check ho jata hai.
+
+---
+
+### Testing Ka Basic Flow
+
+```
+1. Test user banao (DB mein seedha)
+2. Login karo → token lo
+3. Token headers mein daal ke request karo
+4. Response check karo — status code sahi hai?
+```
+
+---
+
+### Asli DB vs Test DB
+
+```
+Production mein:          Testing mein:
+Neon PostgreSQL  ──────►  SQLite (memory mein, fresh, empty)
+                           ↑
+                    get_session ko override karte hain
+```
+
+Har test ke baad SQLite **wipe** ho jata hai — production data safe rehta hai.
+
+---
+
+### `conftest.py` — Shared Setup
+
+Yeh file sab tests ke liye **reusable fixtures** rakhti hai:
+
+```python
+# engine_fixture → SQLite in-memory DB banao
+# session_fixture → is engine ka session
+# client_fixture → get_session override karo, TestClient do
+# normal_user → session mein seedha user insert karo (role="user")
+# admin_user → session mein seedha user insert karo (role="admin")
+# user_headers → login karo → {"Authorization": "Bearer <token>"}
+# admin_headers → admin login → admin token headers
+```
+
+---
+
+### Fixture Kya Hota Hai?
+
+```python
+@pytest.fixture
+def normal_user(session):
+    user = User(name="Test", email="test@gmail.com", ...)
+    session.add(user)
+    session.commit()
+    return user
+```
+
+> **Fixture = Test ka pre-setup** — test chalne se pehle automatically chalta hai.
+>
+> Jaise restaurant mein test se pehle table set karna — test function ko ready environment milta hai.
+
+---
+
+### `get_session` Override — Sabse Important Part
+
+```python
+def get_session_override():
+    yield session   # ← production session nahi, test session
+
+app.dependency_overrides[get_session] = get_session_override
+```
+
+```
+Bina override:  Route → Neon DB (production data!)
+Saath override: Route → SQLite (fresh test data) ✅
+```
+
+---
+
+### Teen Test Files — Kya Test Kiya
+
+**`test_auth.py` — 8 Tests:**
+
+```
+✅ Signin success
+✅ Duplicate email → 400
+✅ Login success → token milta hai
+✅ Wrong password → 401
+✅ Wrong email → 401
+✅ Profile with valid token → 200
+✅ Profile bina token → 401
+✅ Profile fake token → 401
+```
+
+**`test_tasks.py` — 11 Tests:**
+
+```
+✅ Task create → 200
+✅ Task create bina auth → 401
+✅ Tasks get → list milti hai
+✅ Tasks empty → 404
+✅ Filter by status → sirf matching tasks
+✅ Filter not found → 404
+✅ Update task → 200
+✅ Update wrong id → 404
+✅ Delete task → 200
+✅ Delete wrong id → 404
+✅ Data isolation → user A ki tasks user B ko nahi miltin
+```
+
+**`test_admin.py` — 3 Tests:**
+
+```
+✅ Admin user → /admin/dashboard → 200
+✅ Normal user → /admin/dashboard → 403
+✅ Bina token → /admin/dashboard → 401
+```
+
+---
+
+### Status Codes Summary
+
+| Code | Matlab | Kab Aata Hai |
+|---|---|---|
+| `200` | OK | Request successful |
+| `400` | Bad Request | Duplicate email |
+| `401` | Unauthorized | Token nahi / invalid / expired |
+| `403` | Forbidden | Token sahi hai lekin permission nahi (role) |
+| `404` | Not Found | Data exist nahi karta |
+
+---
+
+### Tests Run Karne Ka Command
+
+```bash
+pytest -v        # sab tests verbose mode mein
+pytest -v -k "test_admin"   # sirf admin tests
+pytest -v -k "test_auth"    # sirf auth tests
+```
+
+```
+Output:
+tests/test_admin.py::test_admin_access_success PASSED        ✅
+tests/test_admin.py::test_admin_access_forbidden PASSED      ✅
+...
+22 passed in 2.93s ✅
+```

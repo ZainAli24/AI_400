@@ -1358,3 +1358,239 @@ username=zain@gmail.com&password=abc
 | 2 | SECRET_KEY hardcode karna | GitHub pe visible → fake tokens | `.env` file mein rakho |
 | 3 | WWW-Authenticate header missing | Browser sahi action nahi leta | Hamesha 401 ke saath do |
 | 4 | `/token` pe JSON bhejna | 422 error aata hai | Form data use karo |
+
+---
+
+## Custom Claims — JWT Payload Mein Extra Data
+
+---
+
+### Problem — Abhi Ka System
+
+Maan lo tumhari app mein do tarha ke users hain:
+
+```
+Normal User  → sirf apna profile aur tasks dekh sakta hai
+Admin User   → sab users ki list dekh sakta hai, kisi ko bhi delete kar sakta hai
+```
+
+Abhi ka code har protected route pe yeh karta hai:
+
+```
+User → GET /admin/dashboard + token
+              ↓
+       get_access_user() chala
+              ↓
+       DB se User object mila
+              ↓
+       Route chala — lekin...
+       "Kya yeh admin hai?" check karne ke liye DOBARA DB query karni padegi!
+```
+
+```python
+# Bina custom claims ke — har route pe extra DB query
+@app.get("/admin/dashboard")
+def admin_dashboard(user: User = Depends(get_access_user), session: Session = Depends(get_session)):
+    db_user = session.exec(select(User).where(User.id == user.id)).first()  # ← DOBARA DB!
+    if db_user.role != "admin":
+        raise HTTPException(403, "Not authorized")
+    return {"message": "Welcome admin!"}
+```
+
+**Problem:** Har admin route pe extra DB query — slow aur repetitive.
+
+---
+
+### Solution — Custom Claims
+
+Token banate waqt **role bhi payload mein daal do:**
+
+```
+Normal JWT Payload (abhi):        Custom Claims wala Payload:
+{                                 {
+  "sub": "zain@gmail.com",          "sub": "zain@gmail.com",
+  "exp": 1234567890                 "exp": 1234567890,
+}                                   "role": "admin",        ← Custom Claim
+                                    "permissions": ["read", "write", "delete"]  ← Custom Claim
+                                  }
+```
+
+Ab token mein hi role hai — DB query ki zaroorat nahi!
+
+---
+
+### Custom Claims Kya Hoti Hain?
+
+JWT ke do tarha ke claims hote hain:
+
+**Standard Claims** — JWT standard ne define kiye hain:
+
+| Claim | Naam | Matlab |
+|---|---|---|
+| `sub` | Subject | User kaun hai (email/id) |
+| `exp` | Expiration | Token kab expire hoga |
+| `iat` | Issued At | Token kab bana |
+| `iss` | Issuer | Token kisne banaya |
+
+**Custom Claims** — tum khud define karte ho:
+
+| Claim | Example Value | Matlab |
+|---|---|---|
+| `role` | `"admin"` / `"user"` | User ka role |
+| `permissions` | `["read", "write"]` | Kya kya kar sakta hai |
+| `is_premium` | `true` / `false` | Premium user hai? |
+| `department` | `"engineering"` | Kaunse department mein |
+
+> **Rule:** Custom claims mein sirf **non-sensitive** info daalo — jo public ho sake. Password, credit card kabhi nahi (token decode ho sakta hai).
+
+---
+
+### Implementation — Step by Step
+
+#### Step 1: User Model mein role add karo
+
+```python
+class User(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    name: str
+    email: str
+    password: str
+    role: str = Field(default="user")   # ← "user" ya "admin"
+    created_at: datetime = Field(default_factory=datetime.now)
+```
+
+#### Step 2: Login pe token mein role bhi daalo
+
+```python
+@app.post("/login")
+def login_user(user: loginData, session: Session = Depends(get_session)):
+    user_data = session.exec(select(User).where(User.email == user.email)).first()
+    if user_data:
+        if verify_password(user.password, user_data.password):
+            token = create_access_token({
+                "sub": user_data.email,
+                "role": user_data.role      # ← Custom Claim add kiya
+            })
+            return token
+    raise HTTPException(status_code=401, detail="Invalid email or password!")
+```
+
+#### Step 3: Token mein se role nikalo
+
+```python
+def get_access_user(token = Depends(acccess_token), session: Session = Depends(get_session)):
+    # ... pehle wala code same ...
+    
+    user_data = verify_token(token)     # payload mila: {"sub": "...", "role": "admin"}
+    
+    email = user_data.get("sub")        # email nikali
+    role = user_data.get("role")        # role nikala — DB query nahi!
+    
+    user = session.exec(select(User).where(User.email == email)).first()
+    return user                         # ya return {"user": user, "role": role}
+```
+
+#### Step 4: Admin route — token se check karo
+
+```python
+@app.get("/admin/dashboard")
+def admin_dashboard(token = Depends(acccess_token)):
+    user_data = verify_token(token)
+    
+    if user_data.get("role") != "admin":
+        raise HTTPException(
+            status_code=403,            # 403 = Forbidden (identity pata hai, permission nahi)
+            detail="Admin access required!"
+        )
+    
+    return {"message": "Welcome to admin dashboard!"}
+```
+
+---
+
+### 401 vs 403 — Farq Samjho
+
+```
+401 Unauthorized  →  "Tum kaun ho? Mujhe pata nahi" (token nahi ya invalid)
+403 Forbidden     →  "Tum kaun ho pata hai, lekin yahan permission nahi" (role galat)
+```
+
+```
+Normal user → GET /admin/dashboard
+                    ↓
+             Token valid hai ✅ (user pehchana gaya)
+                    ↓
+             role = "user" — "admin" chahiye tha
+                    ↓
+             403 Forbidden ❌ (identity sahi, permission nahi)
+```
+
+---
+
+### Kaise Kaam Karta Hai — Flow
+
+```
+━━━━━━━━ LOGIN ━━━━━━━━
+
+Zain (admin) → POST /login
+Server → DB mein dekha: role = "admin"
+Server → Token banaya:
+         {
+           "sub": "zain@gmail.com",
+           "role": "admin",            ← role bhi andar hai
+           "exp": ...
+         }
+Server → Token Zain ko de diya
+
+
+━━━━━━━━ ADMIN ROUTE ━━━━━━━━
+
+Zain → GET /admin/dashboard + token
+              ↓
+       verify_token(token)
+              ↓
+       payload = {"sub": "zain@gmail.com", "role": "admin"}
+              ↓
+       role = payload.get("role") → "admin"
+              ↓
+       "admin" == "admin" → ✅ Access allow
+              ↓
+       Dashboard data return ✅
+
+
+━━━━━━━━ NORMAL USER SAME ROUTE PE ━━━━━━━━
+
+Sara (user) → GET /admin/dashboard + token
+              ↓
+       verify_token(token)
+              ↓
+       payload = {"sub": "sara@gmail.com", "role": "user"}
+              ↓
+       role = payload.get("role") → "user"
+              ↓
+       "user" != "admin" → ❌ 403 Forbidden
+```
+
+---
+
+### Kab Custom Claims Useful Hain?
+
+| Use Case | Custom Claim | Fayda |
+|---|---|---|
+| Role-based access | `"role": "admin"` | Har route pe DB query nahi |
+| Premium features | `"is_premium": true` | Feature flag token mein |
+| Multi-tenant app | `"org_id": 42` | Kaunsi organization ka user |
+| API rate limiting | `"plan": "pro"` | Plan token se pata chal jata |
+
+---
+
+### Summary Table
+
+| Cheez | Matlab |
+|---|---|
+| Standard Claims | `sub`, `exp` — JWT ne define kiye |
+| Custom Claims | Tum khud daalo — `role`, `permissions`, etc. |
+| Fayda | Login pe role token mein save hota hai |
+| Security Rule | Sirf non-sensitive info daalo — password kabhi nahi |
+| Role Check | `user.role` DB se check karo — hamesha fresh data milta hai |
+| 401 vs 403 | 401 = identity unknown, 403 = identity pata hai permission nahi |

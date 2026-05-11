@@ -41,6 +41,7 @@ class User(SQLModel, table=True):
     name: str 
     email: str 
     password: str 
+    role: str = Field(default="user")
     created_at: datetime = Field(default_factory= datetime.now) # no neeed to make it human readable because SQLModel/SQLite automatically store it in human readable format.
     # SQLModel/SQLite automatically readable format mein store karta hai: 2026-05-04 14:30:00
 
@@ -145,7 +146,7 @@ def get_access_user(token = Depends(acccess_token), session: Session = Depends(g
     credentailHttpException = HTTPException(
         status_code = status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentails",
-        headers={"WWW-Authenticate": "Baerer"},
+        headers={"WWW-Authenticate": "Bearer"},
     )
 
 
@@ -155,12 +156,15 @@ def get_access_user(token = Depends(acccess_token), session: Session = Depends(g
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, 
             detail="Token has expired! Please login again.",
-            headers={"WWW-Authenticate": "Baerer"}
+            headers={"WWW-Authenticate": "Bearer"}
         )
 
     if not user_data:
         raise credentailHttpException
     
+    role = user_data.get("role")
+    print("\n\n\n -----------> ROLE: ---> ", role, "\n\n\n")
+
     email = user_data.get("sub")
     if not email:
         raise credentailHttpException
@@ -195,7 +199,7 @@ def login_user(user: loginData, session: Session = Depends(get_session)):
     user_data = session.exec(select(User).where(User.email == user.email)).first()
     if user_data:
         if verify_password(user.password, user_data.password):
-            token = create_access_token({"sub": user_data.email})
+            token = create_access_token({"sub": user_data.email, "role": user_data.role})
             return token
     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password! Please try again or create an account if you don't have one.")
 
@@ -257,9 +261,20 @@ def update_task_by_id(task_id: int, update_task:Update_task, user: User = Depend
 # delete task:
 @app.delete("/tasks/delete/{task_id}")
 def delete_task_by_id(task_id: int, user: User = Depends(get_access_user), session: Session = Depends(get_session)):
-    db_task : Tasks = session.exec(select(Tasks).where(Tasks.id == task_id, Tasks.owner_id == user.id))
+    db_task : Tasks = session.exec(select(Tasks).where(Tasks.id == task_id, Tasks.owner_id == user.id)).first()
     if not db_task:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"You don't have any task with this id: {task_id}!")
     session.delete(db_task)
     session.commit()
     return {"message": f"{user.name}'s Task with id: {task_id} has been deleted successfully!"}
+
+
+# Admin Route:
+@app.get("/admin/dashboard")
+def admin_access(user: User = Depends(get_access_user)):
+    if user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required!"
+        )
+    return {"message": "Welcome to admin dashboard!"}
