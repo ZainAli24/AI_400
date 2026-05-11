@@ -226,7 +226,7 @@ def get_user_tasks(user: User = Depends(get_access_user), session: Session = Dep
 
 # filter tasks by status: order_by(Tasks.id):
 @app.get("/tasks/filter", response_model=list[Task_Response])
-def filter_task_by_status(task_status: Literal["pending", "in-progress", "completed"] = "pending", user: User = Depends(get_access_user), session: Session = Depends(get_session)):
+def filter_task_by_status(task_status: Literal["pending", "in progress", "completed"] = "pending", user: User = Depends(get_access_user), session: Session = Depends(get_session)):
     tasks = session.exec(select(Tasks).order_by(Tasks.id).where(Tasks.owner_id == user.id, Tasks.status == task_status)).all()
     if tasks:
         return tasks
