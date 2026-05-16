@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, status, HTTPException
+from fastapi import FastAPI, Depends, status, HTTPException, Request, Response
 from sqlmodel import SQLModel, Session, create_engine, select, Field
 from dotenv import load_dotenv
 import os
@@ -8,6 +8,13 @@ from pwdlib.hashers.argon2 import Argon2Hasher
 from jose import jwt, JWTError, ExpiredSignatureError
 from typing import Optional, Literal
 from fastapi.security import OAuth2PasswordBearer
+from fastapi.middleware.cors import CORSMiddleware
+import time
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 
 acccess_token = OAuth2PasswordBearer(tokenUrl="login")
 
@@ -29,6 +36,44 @@ ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES"))
 
 
 app = FastAPI()
+
+
+origins = [
+    "http://localhost:3000",      # React dev server
+    "http://localhost:8000",      # Fastapi dev server
+    "https://myapp.com",          # Production frontend
+]
+
+
+# Cors Middleware:
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_credentials=True,
+    allow_headers=["Authorization", "Content-Type"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_origins=origins,  
+    expose_headers=["X-Time-Process"], 
+)
+
+
+# Calcualte Request Time Middleware:
+@app.middleware("http")
+async def calculate_req(request: Request, call_next) -> Response:
+    start = time.perf_counter()
+    response = await call_next(request)
+    response.headers["X-Time-Process"] = f"{(time.perf_counter() - start):.4f}"
+    return response
+
+
+# Request logging:
+@app.middleware("http")
+async def loggin_req(request: Request, call_next) -> Response:
+    logging.info(f" --> {request.method} {request.url.path}")
+    respones = await call_next(request)
+    logger.info(f" <--  Time: {respones.headers['X-Time-Process']} , {respones.status_code}")
+    return respones
+
 
 
 # connection with DB:
