@@ -11,6 +11,8 @@ from fastapi.security import OAuth2PasswordBearer
 from fastapi.middleware.cors import CORSMiddleware
 import time
 import logging
+from contextlib import asynccontextmanager
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -35,7 +37,22 @@ ALOGRITHUM = os.getenv("ALGORITHM")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES"))
 
 
-app = FastAPI()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logging.info("[INFO] Starting up...")
+    # create db connection engine:
+    app.state.engine = create_engine(os.getenv("DATABASE_URL"), echo=True)
+    # create table:
+    SQLModel.metadata.create_all(app.state.engine)
+    yield
+    # db connection close:
+    app.state.engine.dispose()
+    logging.info("[INFO] Shutting down...")
+
+
+app = FastAPI(lifespan=lifespan)
 
 
 origins = [
@@ -74,10 +91,6 @@ async def loggin_req(request: Request, call_next) -> Response:
     logger.info(f" <--  Time: {respones.headers['X-Time-Process']} , {respones.status_code}")
     return respones
 
-
-
-# connection with DB:
-engine = create_engine(os.getenv("DATABASE_URL"), echo=True)
 
 
 # Create user table in database:
@@ -138,21 +151,13 @@ class Update_task(SQLModel):
 
     
 
-# create table function:
-def create_table():
-    SQLModel.metadata.create_all(engine)
-
 
 # create session:
-def get_session():
-    with Session(engine) as session:
+def get_session(request: Request):
+    with Session(request.app.state.engine) as session:
         yield session
 
 
-
-@app.on_event("startup")
-def create_user_table():
-    create_table()
 
 
 # Password Hashing:
