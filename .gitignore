@@ -39,3 +39,6 @@ hash.py
 __init__.py
 
 fetching-library-docs
+
+
+02_fastapi_pytest_intro\task_management_app\.env
